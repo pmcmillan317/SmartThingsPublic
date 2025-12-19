@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "OPMS Staff Hub",
+  "version": "1.0",
+  "description": "District-wide new tab dashboard with synchronized staff resources.",
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "permissions": [],
+  "host_permissions": []
+}
