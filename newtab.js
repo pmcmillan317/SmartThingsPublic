@@ -2,74 +2,16 @@
 const React = window.React;
 const ReactDOM = window.ReactDOM;
 // Using htm to avoid Babel runtime compilation which violates CSP
-// Accessed via global window.htm from lib/htm.js
+import { html } from './lib/htm.mjs';
 
 // Bind htm to React.createElement
-const h = window.htm.bind(React.createElement);
+const h = html.bind(React.createElement);
 
 const { useState, useEffect, useRef } = React;
 
 // ==========================================
 // CONFIGURATION SECTION
 // ==========================================
-
-// 1. PLACEHOLDER: If you are Patrick using this in the Previewer, it uses the System's Env.
-// 2. REAL EXTENSION: Replace 'YOUR_API_KEY' etc. with your actual Firebase Console values.
-
-let firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "SENDER_ID",
-    appId: "APP_ID"
-};
-
-// --- Logic to handle Previewer Environment vs Real World ---
-const isPreviewEnv = typeof __firebase_config !== 'undefined';
-if (isPreviewEnv) {
-    try {
-        firebaseConfig = JSON.parse(__firebase_config);
-    } catch (e) {
-        console.error("Error parsing firebase config", e);
-    }
-} else {
-    // Check if user has updated the placeholder
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-        console.warn("Firebase not configured. District Sync will not work until config is added.");
-    }
-}
-
-// Initialize Firebase
-let db;
-try {
-    // Check if firebase is defined (loaded from global script)
-    if (window.firebase) {
-        if (!firebase.apps.length && firebaseConfig.apiKey !== "YOUR_API_KEY") {
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-        } else if (firebase.apps.length) {
-            db = firebase.firestore();
-        }
-    } else {
-        console.error("Firebase SDK not loaded");
-    }
-} catch (error) {
-    console.error("Firebase init error:", error);
-}
-
-// Helper to get the correct collection path based on environment
-const getSettingsCollection = () => {
-     if (isPreviewEnv) {
-         // Use the specific path required by the preview environment
-         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-         return db.collection('artifacts').doc(appId).collection('public').doc('data').collection('district_settings');
-     } else {
-         // Simple path for your real extension
-         return db.collection('district_settings');
-     }
-};
-
 
 // --- Helper Components ---
 const Icon = ({ name, className }) => h`
@@ -345,10 +287,14 @@ const App = () => {
     const [isAdminMode, setIsAdminMode] = useState(false);
     const [adminPinInput, setAdminPinInput] = useState('');
 
-    // DISTRICT SYNC STATE
-    const [districtData, setDistrictData] = useState({
-        backgroundImage: '',
-        staffResources: DEFAULT_RESOURCES
+    // DISTRICT SYNC STATE - REPLACED WITH LOCAL PERSISTENCE
+    const [districtData, setDistrictData] = useState(() => {
+        // Try to load from local storage first, else use default
+        const saved = localStorage.getItem('district_config_local');
+        return saved ? JSON.parse(saved) : {
+            backgroundImage: '',
+            staffResources: DEFAULT_RESOURCES
+        };
     });
 
     // LOCAL SETTINGS
@@ -375,33 +321,11 @@ const App = () => {
     useEffect(() => { localStorage.setItem('layout', JSON.stringify(activeWidgets)); }, [activeWidgets]);
     useEffect(() => { localStorage.setItem('appSettings', JSON.stringify(settings)); }, [settings]);
 
-    // Sync with Firebase
+    // Persist district data locally instead of syncing to Firebase
     useEffect(() => {
-        if (db) {
-            // Auto sign-in anonymously for access
-            if (firebase.auth) {
-                firebase.auth().signInAnonymously().catch(console.error);
-            }
+        localStorage.setItem('district_config_local', JSON.stringify(districtData));
+    }, [districtData]);
 
-            const docRef = getSettingsCollection().doc('global_config');
-
-            const unsubscribe = docRef.onSnapshot((doc) => {
-                if (doc.exists) {
-                    const data = doc.data();
-                    setDistrictData({
-                        backgroundImage: data.backgroundImage || '',
-                        staffResources: data.staffResources || DEFAULT_RESOURCES
-                    });
-                } else {
-                    console.log("No district settings found, using defaults.");
-                }
-            }, (error) => {
-                 console.error("Sync error:", error);
-            });
-
-            return () => unsubscribe();
-        }
-    }, []);
 
     // Apply Background Image
     useEffect(() => {
@@ -457,25 +381,18 @@ const App = () => {
         }
     };
 
-    // --- ADMIN DISTRICT ACTIONS ---
+    // --- ADMIN ACTIONS (LOCAL NOW) ---
 
     const saveDistrictBackground = (url) => {
-        if (!db) { alert("Database not connected. Check API Config."); return; }
-        getSettingsCollection().doc('global_config').set({
-            ...districtData,
-            backgroundImage: url
-        }, { merge: true });
+        setDistrictData(prev => ({ ...prev, backgroundImage: url }));
+        alert("Background saved locally!");
     };
 
     const saveResourceLinks = (jsonString) => {
-        if (!db) { alert("Database not connected."); return; }
         try {
             const parsed = JSON.parse(jsonString);
-            getSettingsCollection().doc('global_config').set({
-                ...districtData,
-                staffResources: parsed
-            }, { merge: true });
-            alert("District Links Updated!");
+            setDistrictData(prev => ({ ...prev, staffResources: parsed }));
+            alert("Links updated locally!");
         } catch (e) {
             alert("Invalid JSON format. Please check syntax.");
         }
@@ -609,12 +526,12 @@ const App = () => {
                             ${isAdminMode && h`
                                 <div className="pt-4 border-t border-slate-100 bg-slate-50 p-4 -mx-6 -mb-6 mt-4">
                                     <h4 className="font-bold text-indigo-700 mb-4 flex items-center gap-2">
-                                        <${Icon} name="cloud-arrow-up" /> District Global Settings
+                                        <${Icon} name="sliders" /> Local Configuration
                                     </h4>
 
                                     ${/* Background Image */}
                                     <div className="mb-4">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">District Background URL</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Background Image URL</label>
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
@@ -635,7 +552,7 @@ const App = () => {
                                     ${/* Staff Hub Resources JSON Editor */}
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Staff Hub Links (JSON)</label>
-                                        <p className="text-xs text-slate-400 mb-2">Edit the categories and links below. Be careful with formatting!</p>
+                                        <p className="text-xs text-slate-400 mb-2">Edit the categories and links below. These changes are saved to this browser only.</p>
                                         <textarea
                                             value=${localJsonEdit}
                                             onInput=${(e) => setLocalJsonEdit(e.target.value)}
@@ -645,7 +562,7 @@ const App = () => {
                                             onClick=${() => saveResourceLinks(localJsonEdit)}
                                             className="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-md"
                                         >
-                                            Push Changes to District
+                                            Update Links
                                         </button>
                                     </div>
                                 </div>

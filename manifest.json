@@ -7,7 +7,5 @@
     "newtab": "newtab.html"
   },
   "permissions": [],
-  "host_permissions": [
-    "https://firestore.googleapis.com/*"
-  ]
+  "host_permissions": []
 }
