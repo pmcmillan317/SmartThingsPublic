@@ -2,10 +2,10 @@
 const React = window.React;
 const ReactDOM = window.ReactDOM;
 // Using htm to avoid Babel runtime compilation which violates CSP
-import { html } from './lib/htm.mjs';
+import htm from './lib/htm.mjs';
 
 // Bind htm to React.createElement
-const h = html.bind(React.createElement);
+const h = htm.bind(React.createElement);
 
 const { useState, useEffect, useRef } = React;
 
